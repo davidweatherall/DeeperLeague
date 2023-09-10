@@ -82,6 +82,12 @@ If you wish to generate new test data, be sure to delete the `raw_training_data 
 ## Converting to tensorflowjs
 The `convert.py` script will convert your model to TensorFlow.js if you want to run it in a browser or in a node.js environment
 
+## Running the model
+Check out the [run_predction.py](run_prediction.py) file for an example of how to run the model on a single image - to run it on a video you will probably want to use ffmpeg to cut up the video into individual frames, crop the image to be just the minimap and then run the model on each frame
+
+## YOLOv8
+This model was built using the [YOLOv8](https://github.com/ultralytics/ultralytics) model
+
 ## Yuumi
 Yuumi makes things very difficult - there's specific code in the `generateTestingData.py` dedicated to creating yuumi borders around people when she attaches - this works maybe 50% of the time and also causes a fair amount of false positives when she's not even in the game. I think to make this better the yuumi image generation code needs to actually be more realistic when she's attached, and also the model needs to be trained on more yuumi images - I think the model is struggling to learn the yuumi border because it's not a very common thing to see in the training data and its so abnormal compared to the other champions.
 
