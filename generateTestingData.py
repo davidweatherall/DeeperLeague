@@ -1,10 +1,12 @@
 import random
 import numpy as np
-from PIL import Image, ImageDraw, ImageEnhance, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance
 import cv2
 import os
 import multiprocessing
 from multiprocessing import Process
+
+from convertGrayscaleIcons import to_red, to_blue
 
 def generate_yolo_training_data(annotation_id, x_center_point_pct, y_center_point_pct, x_size_as_pct, y_size_as_pct):
 
@@ -33,6 +35,27 @@ def generate_yolo_training_data(annotation_id, x_center_point_pct, y_center_poin
 
     return '{0} {1} {2} {3} {4}'.format(annotation_id, x_center_point, y_center_point, x_size, y_size)
 
+def random_color_augmentation(image):
+    # Randomly adjust brightness (0.8 to 1.2)
+    enhancer = ImageEnhance.Brightness(image)
+    image = enhancer.enhance(random.uniform(0.8, 1.2))
+
+    # Randomly adjust contrast (0.8 to 1.2)
+    enhancer = ImageEnhance.Contrast(image)
+    image = enhancer.enhance(random.uniform(0.8, 1.2))
+
+    # Randomly adjust saturation (0.8 to 1.2)
+    enhancer = ImageEnhance.Color(image)
+    image = enhancer.enhance(random.uniform(0.8, 1.2))
+
+    # Randomly adjust hue (-10 to 10 degrees)
+    # Convert to HSV, adjust hue, convert back to RGB
+    image = np.array(image.convert('HSV'))
+    image[..., 0] = (image[..., 0] + random.randint(-10, 10)) % 256
+    image = Image.fromarray(image, 'HSV').convert('RGB')
+
+    return image
+
 def do_work(int_counter, champ_map):
 
     max_champ = len(champ_map)
@@ -43,28 +66,70 @@ def do_work(int_counter, champ_map):
             all_champ_names.append(champ_map[str(i)]['champ_name'])
 
     random_10_numbers = []
-    for i in range(10):
+    for i in range(50):
         champ_name = random.choice(all_champ_names)
         annotation_from_champ_name = [key for key, value in champ_map.items() if value['champ_name'] == champ_name][0]
         random_10_numbers.append(annotation_from_champ_name)
 
     champ_annotations = []
 
-    map_path = 'assets/lolmap.png'
-    if(random.randint(0, 5) == 0):
-        map_path = 'assets/lolmap_bounties.png'
-        if(random.randint(0, 1) == 0):
-            map_path = 'assets/lolmap_hextech.png'
+    rn = random.randint(0, 9)
+    if(rn < 4):
+        map_path = 'assets/maps/lolmap.png'
+    elif(rn < 8):
+        map_path = 'assets/maps/lolmap_bounties.png'
+    else:
+        map_paths = os.listdir('assets/maps/other')
+        map_path = 'assets/maps/other/' + random.choice(map_paths)
 
     map = Image.open(map_path).convert("RGBA")
 
-    enhancer = ImageEnhance.Brightness(map)
+    #resize map to be 320x320
+    map = map.resize((320, 320))
+    map_size = map.size
 
-    factor = random.randint(7, 15) / 10
-    map = enhancer.enhance(factor)
+    # add minion clusters
+    for i in range(random.randint(5, 10)):
+        if random.randint(0, 1) == 0:
+            minion_image = to_blue('assets/minimap_icons/minionmapcircle_gray.png')
+        else:
+            minion_image = to_red('assets/minimap_icons/minionmapcircle_gray.png')
+        minion_image_size = random.randint(3, 6)
+        minion_image = minion_image.resize((minion_image_size, minion_image_size))
 
-    #resize map to be 469x469
-    map = map.resize((469, 469))
+        minion_x_center_point_as_pct = random.randint(0, 1000) / 1000
+        minion_y_center_point_as_pct = random.randint(0, 1000) / 1000
+        for _ in range(random.randint(6, 8)):
+            minion_x_center_point = int(map_size[0] * minion_x_center_point_as_pct)
+            minion_y_center_point = int(map_size[1] * minion_y_center_point_as_pct)
+            map.paste(minion_image, (minion_x_center_point - int(minion_image_size/2), minion_y_center_point - int(minion_image_size/2)), minion_image)
+            minion_x_center_point_as_pct = minion_x_center_point_as_pct + (random.randint(-30, 30) / 1000)
+            minion_y_center_point_as_pct = minion_y_center_point_as_pct + (random.randint(-30, 30) / 1000)
+
+    # add random minimap icons
+    minimap_icons = os.listdir('assets/minimap_icons')
+    for i in range(random.randint(0, 100)):
+        random_icon = random.choice(minimap_icons)
+        if random_icon.endswith('_gray.png'):
+            if random.randint(0, 1) == 0:
+                icon_image = to_blue('assets/minimap_icons/' + random_icon)
+            else:
+                icon_image = to_red('assets/minimap_icons/' + random_icon)
+        else:
+            icon_image = Image.open('assets/minimap_icons/' + random_icon).convert("RGBA")
+
+        if random_icon in ['tunnelicon.png', 'tunnelicon2.png', 'yorickmaiden.png', 'yorickmaiden_enemy.png', 'sr_infernalrift_meep.png']:
+            icon_image_size = int(icon_image.size[0] * (random.randint(1, 3) / 10))
+        else:
+            icon_image_size = int(icon_image.size[0] * (random.randint(4, 8) / 10))
+        icon_image = icon_image.resize((icon_image_size, icon_image_size))
+
+        icon_x_center_point_as_pct = random.randint(0, 1000) / 1000
+        icon_y_center_point_as_pct = random.randint(0, 1000) / 1000
+        icon_x_center_point = int(map_size[0] * icon_x_center_point_as_pct)
+        icon_y_center_point = int(map_size[1] * icon_y_center_point_as_pct)
+
+        map.paste(icon_image, (icon_x_center_point - int(icon_image_size/2), icon_y_center_point - int(icon_image_size/2)), icon_image)
 
     x_center_point_int = random.randint(0, 1000)
     champ_x_center_point_as_pct = x_center_point_int / 1000
@@ -75,7 +140,7 @@ def do_work(int_counter, champ_map):
 
     champ_center_points = []
 
-    for i in range(10):
+    for i in range(50):
 
         champ_annotation_id = random_10_numbers[i]
         champ_name = champ_map[str(champ_annotation_id)]['champ_name']
@@ -83,15 +148,12 @@ def do_work(int_counter, champ_map):
 
         if champ_name == "Yuumi" and random.randint(0, 1) == 0 and previous_champ_recalling == False and i != 0:
 
-            yuumi_image = "assets/yuumiblue_minimap.png"
             if(random.randint(0, 1) == 0):
-                yuumi_image = "assets/yuumired_minimap.png"
-
-            circle_image=Image.open(yuumi_image).convert("RGBA")
-            rgba = np.array(circle_image)
+                circle_image = to_blue('assets/yuumi_minimap_gray.png')
+            else:
+                circle_image = to_red('assets/yuumi_minimap_gray.png')
 
             circle_size = random.randint(45, 60)
-            adjusted_size = circle_size
             circle_image = circle_image.resize((circle_size, circle_size))
 
             yuumi_x_center_point = int(map_size[0] * champ_x_center_point_as_pct) + random.randint(-1, 3)
@@ -99,7 +161,7 @@ def do_work(int_counter, champ_map):
 
             map.paste(circle_image, (yuumi_x_center_point - int(circle_size/2), yuumi_y_center_point - int(circle_size/2)), circle_image)
 
-            yolo_training_data = generate_yolo_training_data(champ_annotation_id, champ_x_center_point_as_pct, champ_y_center_point_as_pct, adjusted_size/map_size[0], adjusted_size/map_size[1])
+            yolo_training_data = generate_yolo_training_data(champ_annotation_id, champ_x_center_point_as_pct, champ_y_center_point_as_pct, circle_size/map_size[0], circle_size/map_size[1])
 
             champ_annotations.append(yolo_training_data)
 
@@ -108,11 +170,6 @@ def do_work(int_counter, champ_map):
 
 
         img=Image.open("champions/" + champ_name + "/" + champ_image_choice.__str__() + ".png").convert("RGBA")
-        h,w=img.size
-        # crop_amount = random.randint(0, 2)
-        # img = img.crop((crop_amount, crop_amount, h-crop_amount, w-crop_amount))
-        # npImage=np.array(img)
-
         newH,newW=img.size
 
         X, Y = newH/2, newH/2
@@ -132,7 +189,7 @@ def do_work(int_counter, champ_map):
 
         img.paste(circle, (0, 0), circle)
 
-        image_size = random.randint(35, 44)
+        image_size = random.randint(25, 35)
 
         resized_img = img.resize((image_size, image_size))
 
@@ -154,8 +211,6 @@ def do_work(int_counter, champ_map):
 
         champ_center_points.append((champ_x_center_point_as_pct, champ_y_center_point_as_pct))
 
-        map_size = map.size
-
         x_center_point = int(map_size[0] * champ_x_center_point_as_pct)
         y_center_point = int(map_size[1] * champ_y_center_point_as_pct)
         
@@ -176,7 +231,7 @@ def do_work(int_counter, champ_map):
             recall_rotation = random.randint(0, 360)
             recall_image = recall_image.rotate(recall_rotation, expand=True)
             
-            recall_image_size = image_size + random.randint(18, 30)
+            recall_image_size = image_size + random.randint(18, 25)
             recall_image = recall_image.resize((recall_image_size, recall_image_size))
             map.paste(recall_image, (x_start - int(recall_image_size/2) + int(image_size/2), y_start - int(recall_image_size/2) + int(image_size/2)), recall_image)
             previous_champ_recalling = True
@@ -197,10 +252,14 @@ def do_work(int_counter, champ_map):
     ping_x_center_point = int(map_size[0] * ping_x_center_point_as_pct)
     ping_y_center_point = int(map_size[1] * ping_y_center_point_as_pct)
 
-    for i in range(random.randint(0, 20)):
+    for i in range(random.randint(0, 50)):
         random_ping = random.choice(ping_images)
         ping_image = Image.open('assets/pings/' + random_ping).convert("RGBA")
-        ping_image_size = random.randint(15, 35)
+        if random.randint(0, 1) == 1:
+            ping_image = to_red('assets/pings/' + random_ping)
+        else:
+            ping_image = to_blue('assets/pings/' + random_ping)
+        ping_image_size = random.randint(10, 20)
         ping_image = ping_image.resize((ping_image_size, ping_image_size))
 
         # randomly put 33% over champs
@@ -248,42 +307,11 @@ def do_work(int_counter, champ_map):
                 if(random.randint(0, 1) == 0):
                     tintable_images = ['ring_tintable.png', 'ring2_tintable.png']
                     circle_image_name = random.choice(tintable_images)
-                    circle_image = Image.open('assets/pings/circles/' + circle_image_name).convert("RGBA")
-                    # convert tintable image white to red
-                    circle_image = circle_image.convert("RGBA")
-                    rgba = np.array(circle_image)
-                    b, g, r, a = cv2.split(rgba)
-                    res = cv2.merge((b, g, r, a))
-
-                    #find where the pixels are white and make those red, but the less white ones should be less red
-                    whiteish_pixels = (res[:, :, 0] > 10) & (res[:, :, 1] > 10) & (res[:, :, 2] > 10)
-
-                    values_to_change = np.zeros_like(res)
-
-                    colours = ['red', 'blue', 'yellow']
-                    colour = random.choice(colours)
-
-                    # loop through red_values
-                    for j in range(len(values_to_change)):
-                        for jj in range(len(values_to_change[j])):
-                            if(colour == 'red'):
-                                values_to_change[j][jj][0] = random.randint(200, 255) - res[j][jj][0]
-                                values_to_change[j][jj][1] = 0
-                                values_to_change[j][jj][2] = 0
-                                values_to_change[j][jj][3] = circle_opacity
-                            elif(colour == 'blue'):
-                                values_to_change[j][jj][0] = 0
-                                values_to_change[j][jj][1] = 0
-                                values_to_change[j][jj][2] = random.randint(200, 255) - res[j][jj][0]
-                                values_to_change[j][jj][3] = circle_opacity
-                            elif(colour == 'yellow'):
-                                values_to_change[j][jj][0] = random.randint(200, 255) - res[j][jj][0]
-                                values_to_change[j][jj][1] = random.randint(200, 255) - res[j][jj][0]
-                                values_to_change[j][jj][2] = 0
-                                values_to_change[j][jj][3] = circle_opacity
-
-                    res[whiteish_pixels] = values_to_change[whiteish_pixels]
-                    circle_image = Image.fromarray(res)
+                    circle_image_path = 'assets/pings/circles/' + circle_image_name
+                    if random.randint(0, 1) == 1:
+                        circle_image = to_red(circle_image_path)
+                    else:
+                        circle_image = to_blue(circle_image_path)
                     circle_size = random.randint(10, 80)
                     circle_image = circle_image.resize((circle_size, circle_size))
                     circle_image.save('circle.png')
@@ -299,80 +327,6 @@ def do_work(int_counter, champ_map):
                         circle_image.putalpha(random.randint(0, 40))
                     map.paste(circle_image, (ping_x_center_point - int(circle_size/2), ping_y_center_point - int(circle_size/2)), circle_image)
 
-
-    # add random minimap icons
-    minimap_icons = os.listdir('assets/minimap_icons')
-    for i in range(random.randint(0, 10)):
-        random_icon = random.choice(minimap_icons)
-        icon_image = Image.open('assets/minimap_icons/' + random_icon).convert("RGBA")
-        icon_image_size = int(icon_image.size[0] * (random.randint(7, 13) / 10))
-        icon_image = icon_image.resize((icon_image_size, icon_image_size))
-
-        icon_x_center_point_as_pct = random.randint(0, 1000) / 1000
-        icon_y_center_point_as_pct = random.randint(0, 1000) / 1000
-        icon_x_center_point = int(map_size[0] * icon_x_center_point_as_pct)
-        icon_y_center_point = int(map_size[1] * icon_y_center_point_as_pct)
-
-        map.paste(icon_image, (icon_x_center_point - int(icon_image_size/2), icon_y_center_point - int(icon_image_size/2)), icon_image)
-
-    for i in range(random.randint(2, 4)):
-        red_circle_size = random.randint(7, 9)
-        red_circle = Image.new('RGBA', (red_circle_size, red_circle_size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(red_circle)
-        draw.ellipse([(0, 0), (red_circle_size, red_circle_size)], fill=(255, 0, random.randint(0, 70), 255), outline=(0, 0, 0, 255), width=random.randint(1, 2))
-
-        number_in_group = random.randint(1, 8)
-        x_center_point_as_pct = random.randint(0, 1000) / 1000
-        y_center_point_as_pct = random.randint(0, 1000) / 1000
-        for j in range(number_in_group):
-            map_size = map.size
-
-            x_center_point = int(map_size[0] * x_center_point_as_pct)
-            y_center_point = int(map_size[1] * y_center_point_as_pct)
-
-            x_start = x_center_point - int(5/2)
-            y_start = y_center_point - int(5/2)
-
-            map.paste(red_circle, (x_start, y_start), red_circle)
-
-            x_center_point_as_pct = x_center_point_as_pct + (random.randint(-20, 20) / 1000)
-            y_center_point_as_pct = y_center_point_as_pct + (random.randint(-20, 20) / 1000)
-
-    for i in range(random.randint(3, 5)):
-        blue_circle_size = random.randint(7, 9)
-        blue_circle = Image.new('RGBA', (blue_circle_size, blue_circle_size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(red_circle)
-        draw.ellipse([(0, 0), (blue_circle_size, blue_circle_size)], fill=(0, random.randint(0, 70), 255, 255), outline=(0, 0, 0, 255), width=random.randint(1, 2))
-
-        number_in_group = random.randint(1, 8)
-        x_center_point_as_pct = random.randint(0, 1000) / 1000
-        y_center_point_as_pct = random.randint(0, 1000) / 1000
-        for j in range(number_in_group):
-            map_size = map.size
-
-            x_center_point = int(map_size[0] * x_center_point_as_pct)
-            y_center_point = int(map_size[1] * y_center_point_as_pct)
-
-            x_start = x_center_point - int(5/2)
-            y_start = y_center_point - int(5/2)
-
-            map.paste(red_circle, (x_start, y_start), red_circle)
-
-            x_center_point_as_pct = x_center_point_as_pct + (random.randint(-20, 20) / 1000)
-            y_center_point_as_pct = y_center_point_as_pct + (random.randint(-20, 20) / 1000)
-
-    if random.randint(0, 3) == 1:
-        cursor_images = ['assets/new_cursor.png', 'assets/old_cursor.png']
-        new_cursor = Image.open(random.choice(cursor_images))
-        cursor_size = int(50 * (random.randint(80, 100) / 100))
-        new_cursor = new_cursor.resize((cursor_size, cursor_size))
-        if(random.randint(0, 1) == 1):
-            random_champ = random.choice(champ_center_points)
-            map.paste(new_cursor, (int((random_champ[0] * map.size[0]) + random.randint(-10, 10) - int(cursor_size / 2)), int((random_champ[1] * map.size[1]) + random.randint(-10, 10) - int(cursor_size / 2))), new_cursor)
-        else:
-            map.paste(new_cursor, (random.randint(0, map.size[0] - cursor_size), random.randint(0, map.size[1] - cursor_size)), new_cursor)
-
-
     recangle_height = random.randint(70, 120)
     recangle_width = random.randint(100, 170)
 
@@ -386,52 +340,19 @@ def do_work(int_counter, champ_map):
         random_champ = random.choice(champ_center_points)
         map.paste(white_rectangle, (int((random_champ[0] * map.size[0]) + random.randint(-10, 10)), int((random_champ[1] * map.size[1]) + random.randint(-10, 10))), white_rectangle)
 
-    if(random.randint(3, 3) == 3):
-
-        random_number_to_generate = random.randint(1, 15)
-
-        for i in range(random_number_to_generate):
-
-            fonts = ['assets/arial.ttf', 'assets/arial-bold.ttf']
-            font_path = random.choice(fonts)
-
-            time_amount = '{}{}:{}{}'.format(random.randint(0, 2), random.randint(0, 9), random.randint(0, 5), random.randint(0, 9))
-
-            time_font = ImageFont.truetype(font_path, random.randint(16, 24))
-        
-            text_image = Image.new('RGBA', (100, 100))
-            draw = ImageDraw.Draw(text_image)
-            draw.text((0, 0), time_amount, font=time_font, fill=(255, 255, 255, 255))
-
-            text_x_center_point_int = random.randint(0, 1000)
-            text_x_center_point_as_pct = text_x_center_point_int / 1000
-            text_x_center_point = int(map_size[0] * text_x_center_point_as_pct)
-            text_y_center_point_int = random.randint(0, 1000)
-            text_y_center_point_as_pct = text_y_center_point_int / 1000
-            text_y_center_point = int(map_size[1] * text_y_center_point_as_pct)
-
-            map.paste(text_image, (text_x_center_point, text_y_center_point), text_image)
+    map = random_color_augmentation(map)
 
     os.makedirs('raw_training_data', exist_ok=True)
     os.makedirs('raw_training_data/annotations', exist_ok=True)
     os.makedirs('raw_training_data/images', exist_ok=True)
 
-    if(random.randint(0, 10) == 0): # 1 in 10 remains original quality
-        map = map.convert('RGB')
-        map.save('raw_training_data/images/' + int_counter.__str__() + '.jpg', format='JPEG')
+    if(random.randint(0, 10) < 8): # 8 in 10 remains high quality
+        random_quality = 95
     else:
-        resize_amount = (random.randint(10, 20) / 10) ** 2
+        random_quality = random.randint(50, 90)
 
-        map = map.resize((int(map.size[0] / resize_amount), int(map.size[1] / resize_amount)))
-        map = map.resize((int(map.size[0] * resize_amount), int(map.size[1] * resize_amount)))
-
-        if random.randint(0, 1) == 1:
-            resize_amount = random.randint(10, 20) / 10
-            map = map.resize((int(map.size[0] / resize_amount), int(map.size[1] / resize_amount)))
-
-        map = map.convert('RGB')
-        random_quality = (random.randint(2, 9) ** 2) + 20
-        map.save('raw_training_data/images/' + int_counter.__str__() + '.jpg', format='JPEG', quality=random_quality)
+    map = map.convert("RGB")
+    map.save('raw_training_data/images/' + int_counter.__str__() + '.jpg', format='JPEG', quality=random_quality)
 
     with open('raw_training_data/annotations/' + int_counter.__str__() + '.txt', 'w') as f:
         f.write('\n'.join(champ_annotations))
@@ -456,7 +377,7 @@ if __name__ == "__main__":
     processes = []
 
     number_of_processes = multiprocessing.cpu_count()
-    total_amount = 300000
+    total_amount = 1000
     amount_per_pool = int(total_amount / number_of_processes)
 
     for w in range(number_of_processes):
@@ -470,4 +391,3 @@ if __name__ == "__main__":
     for p in processes:
         p.join()
 
-    
